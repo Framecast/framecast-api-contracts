@@ -1,0 +1,9 @@
+# Rust build artifacts — not generated code
+target/
+
+# Buf local cache
+.buf/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,5 @@
+# Hook scripts must keep LF endings — CRLF breaks shebang on Windows checkout.
+.githooks/pre-commit text eol=lf
+
+# Generated code: mark as generated so GitHub diffs are collapsed by default.
+gen/** linguist-generated=true

@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+package video_processing.v1;
+
+option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_processing/v1;videoprocessingv1";
+
+import "google/protobuf/timestamp.proto";
+
+// WorkerService is the gRPC service hosted by MPS.
+// The infra worker initiates the connection and opens a bidirectional stream.
+service WorkerService {
+  // JobStream is the persistent control channel between an infra worker and MPS.
+  // The worker opens this stream on startup and keeps it alive.
+  // All job assignments, progress reports, heartbeats, and lifecycle signals
+  // flow over this single stream.
+  rpc JobStream(stream WorkerMessage) returns (stream MpsMessage) {}
+
+  // GetWorkerSchema returns the worker's full CapabilityProfile as a JSON
+  // document, including diagnostic fields (e.g. probe failures) that are not
+  // carried in WorkerCapabilities.
+  rpc GetWorkerSchema(GetWorkerSchemaRequest) returns (GetWorkerSchemaResponse) {}
+}
+
+// ── Stream envelope messages ───────────────────────────────────────────────
+
+// WorkerMessage wraps every message the worker sends to MPS over JobStream.
+message WorkerMessage {
+  oneof payload {
+    WorkerCapabilities capabilities  = 1;
+    Heartbeat          heartbeat     = 2;
+    JobStatusUpdate    status_update = 3;
+    JobComplete        job_complete  = 4;
+    UploadDone         upload_done   = 5;
+  }
+}
+
+// MpsMessage wraps every message MPS sends to the worker over JobStream.
+message MpsMessage {
+  oneof payload {
+    StartJobRequest   start_job          = 1;
+    UploadInstruction upload_instruction = 2;
+    Discard           discard            = 3;
+  }
+}
+
+// ── Worker → MPS ──────────────────────────────────────────────────────────
+
+// WorkerCapabilities mirrors the core CapabilityProfile, minus diagnostic
+// probe_failures (available via GetWorkerSchema). Sent immediately on stream
+// open and on every reconnect. On reconnect, previous_job carries the status
+// of the job that was running when the previous stream was lost.
+message WorkerCapabilities {
+  HostInfo                  host         = 1;
+  optional FfmpegCapsReport ffmpeg       = 2;
+  optional ShakaCapsReport  shaka        = 3;
+  // Step kinds available on this worker (e.g. "video_encode", "package",
+  // "storyboard"). Opaque strings — semantics defined by the worker core.
+  repeated string           step_kinds   = 4;
+  // (VideoCodec, HwAccel) pairs that passed the runtime encoder probe.
+  repeated VideoCapability  video        = 5;
+  // Audio codecs that passed the runtime encoder probe.
+  repeated AudioCodec       audio        = 6;
+  // Set only on reconnect. Absent on first connect.
+  optional JobReport        previous_job = 7;
+}
+
+message VideoCapability {
+  VideoCodec codec    = 1;
+  HwAccel    hw_accel = 2;
+}
+
+// ── Host info ─────────────────────────────────────────────────────────────
+
+message HostInfo {
+  string             os             = 1;
+  optional string    os_long        = 2;
+  optional string    kernel_version = 3;
+  string             arch           = 4;
+  optional string    hostname       = 5;
+  CpuInfo            cpu            = 6;
+  MemoryInfo         memory         = 7;
+  repeated DiskInfo  disks          = 8;
+  repeated GpuInfo   gpus           = 9;
+}
+
+message CpuInfo {
+  string          brand           = 1;
+  string          vendor          = 2;
+  optional uint32 physical_cores  = 3;
+  uint32          logical_cores   = 4;
+  uint64          frequency_mhz   = 5;
+}
+
+message MemoryInfo {
+  uint64 total_bytes      = 1;
+  uint64 available_bytes  = 2;
+  uint64 used_bytes       = 3;
+  uint64 swap_total_bytes = 4;
+  uint64 swap_used_bytes  = 5;
+}
+
+message DiskInfo {
+  string name            = 1;
+  string mount           = 2;
+  string file_system     = 3;
+  uint64 total_bytes     = 4;
+  uint64 available_bytes = 5;
+  string kind            = 6;
+  bool   removable       = 7;
+}
+
+message GpuInfo {
+  string          vendor           = 1;
+  optional uint32 vendor_id        = 2;
+  string          name             = 3;
+  string          device_type      = 4;
+  uint64          vram_total_bytes = 5;
+  string          api              = 6;
+  optional string api_version      = 7;
+  optional string driver_version   = 8;
+}
+
+// ── Tool caps ─────────────────────────────────────────────────────────────
+
+message FfmpegCapsReport {
+  optional string version       = 1;
+  // Encoder names reported by ffmpeg -encoders (sorted).
+  repeated string encoders      = 2;
+  bool            nvenc         = 3;
+  bool            qsv           = 4;
+  bool            vaapi         = 5;
+  bool            videotoolbox  = 6;
+}
+
+message ShakaCapsReport {
+  optional string version = 1;
+  string          binary  = 2;
+}
+
+// ── Job lifecycle messages ────────────────────────────────────────────────
+
+// JobReport is included in WorkerCapabilities on reconnect to report the
+// status of a job that was in progress when the previous stream was lost.
+message JobReport {
+  string    job_id = 1;
+  JobStatus status = 2;
+  // Set only when status == JOB_STATUS_COMPLETED.
+  optional JobOutcome outcome = 3;
+}
+
+message Heartbeat {
+  string                    worker_id = 1;
+  google.protobuf.Timestamp sent_at   = 2;
+}
+
+// JobStatusUpdate reports step-level progress for a running job.
+message JobStatusUpdate {
+  string job_id    = 1;
+  string step_kind = 2;
+  // Progress within the current step, 0.0–1.0.
+  float  progress  = 3;
+  optional string log_line = 4;
+}
+
+// JobComplete reports that the worker's pipeline has finished.
+// MPS responds with UploadInstruction (on success) or Discard.
+message JobComplete {
+  string     job_id  = 1;
+  JobOutcome outcome = 2;
+  // Set only when outcome == JOB_OUTCOME_FAILED.
+  optional string error = 3;
+}
+
+// UploadDone confirms that the worker has finished uploading output to S3.
+message UploadDone {
+  string job_id = 1;
+}
+
+// ── MPS → Worker ──────────────────────────────────────────────────────────
+
+// StartJobRequest dispatches a job to the worker.
+message StartJobRequest {
+  string job_id        = 1;
+  // URI of the raw input media (e.g. S3 presigned URL).
+  string source_uri    = 2;
+  // Encoding manifest as a JSON string. Parsed by the worker core; MPS
+  // passes it through without interpreting the schema.
+  string manifest_json = 3;
+}
+
+// UploadInstruction tells the worker where to upload its packaged output.
+// Sent by MPS after acknowledging a successful JobComplete.
+message UploadInstruction {
+  string job_id           = 1;
+  // S3 URI prefix. The worker places output assets under this prefix,
+  // preserving the relative paths from the core output layout.
+  string target_uri_prefix = 2;
+}
+
+// Discard tells the worker to abort the pipeline for a job and clear local
+// state. Sent when the job has already reached a terminal state in Redis
+// (e.g. marked failed by the sweeper while the worker was disconnected).
+message Discard {
+  string job_id = 1;
+  string reason = 2;
+}
+
+// ── GetWorkerSchema ────────────────────────────────────────────────────────
+
+message GetWorkerSchemaRequest {}
+
+message GetWorkerSchemaResponse {
+  // Full CapabilityProfile serialized as JSON, including probe_failures.
+  string schema_json = 1;
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+enum VideoCodec {
+  VIDEO_CODEC_UNSPECIFIED = 0;
+  VIDEO_CODEC_H264        = 1;
+  VIDEO_CODEC_H265        = 2;
+  VIDEO_CODEC_AV1         = 3;
+  VIDEO_CODEC_VP9         = 4;
+}
+
+enum HwAccel {
+  HW_ACCEL_UNSPECIFIED   = 0;
+  HW_ACCEL_NONE          = 1;
+  HW_ACCEL_NVENC         = 2;
+  HW_ACCEL_QSV           = 3;
+  HW_ACCEL_VAAPI         = 4;
+  HW_ACCEL_VIDEO_TOOLBOX = 5;
+  HW_ACCEL_AMF           = 6;
+}
+
+enum AudioCodec {
+  AUDIO_CODEC_UNSPECIFIED = 0;
+  AUDIO_CODEC_AAC         = 1;
+  AUDIO_CODEC_OPUS        = 2;
+  AUDIO_CODEC_AC3         = 3;
+  AUDIO_CODEC_EAC3        = 4;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_RUNNING     = 1;
+  JOB_STATUS_COMPLETED   = 2;
+}
+
+enum JobOutcome {
+  JOB_OUTCOME_UNSPECIFIED = 0;
+  JOB_OUTCOME_SUCCEEDED   = 1;
+  JOB_OUTCOME_FAILED      = 2;
+}
