@@ -180,21 +180,38 @@ message UploadDone {
 
 // StartJobRequest dispatches a job to the worker.
 message StartJobRequest {
-  string job_id        = 1;
-  // URI of the raw input media (e.g. S3 presigned URL).
-  string source_uri    = 2;
+  string         job_id          = 1;
+  // Base URL or direct download URL of the raw input media.
+  // Interpretation depends on source_provider.
+  string         source_uri      = 2;
   // Encoding manifest as a JSON string. Parsed by the worker core; MPS
   // passes it through without interpreting the schema.
-  string manifest_json = 3;
+  string         manifest_json   = 3;
+  // Defaults to SOURCE_PROVIDER_DIRECT if unset or UNSPECIFIED.
+  SourceProvider source_provider = 4;
+}
+
+// StorageCredentials carries S3-compatible upload credentials.
+// Issued per-job just-in-time to limit blast radius on compromised nodes.
+message StorageCredentials {
+  // Full endpoint URL, e.g. "https://s3.amazonaws.com" or "http://minio:9000".
+  string          endpoint          = 1;
+  string          bucket            = 2;
+  string          access_key_id     = 3;
+  string          secret_access_key = 4;
+  optional string region            = 5;
+  // Force path-style addressing. Required for MinIO and some S3-compatible services.
+  bool            force_path_style  = 6;
 }
 
 // UploadInstruction tells the worker where to upload its packaged output.
 // Sent by MPS after acknowledging a successful JobComplete.
 message UploadInstruction {
-  string job_id           = 1;
-  // S3 URI prefix. The worker places output assets under this prefix,
-  // preserving the relative paths from the core output layout.
-  string target_uri_prefix = 2;
+  string             job_id            = 1;
+  // The worker places output assets under this prefix, preserving the
+  // relative paths from the core output layout.
+  string             target_uri_prefix = 2;
+  StorageCredentials storage           = 3;
 }
 
 // Discard tells the worker to abort the pipeline for a job and clear local
@@ -202,7 +219,6 @@ message UploadInstruction {
 // (e.g. marked failed by the sweeper while the worker was disconnected).
 message Discard {
   string job_id = 1;
-  string reason = 2;
 }
 
 // ── GetWorkerSchema ────────────────────────────────────────────────────────
@@ -215,6 +231,13 @@ message GetWorkerSchemaResponse {
 }
 
 // ── Enums ──────────────────────────────────────────────────────────────────
+
+enum SourceProvider {
+  SOURCE_PROVIDER_UNSPECIFIED = 0;
+  SOURCE_PROVIDER_DIRECT      = 1;  // plain URL, no provider-specific logic
+  SOURCE_PROVIDER_MUX         = 2;
+  SOURCE_PROVIDER_BITMOVIN    = 3;
+}
 
 enum VideoCodec {
   VIDEO_CODEC_UNSPECIFIED = 0;
