@@ -265,13 +265,37 @@ pub struct UploadDone {
 pub struct StartJobRequest {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    /// URI of the raw input media (e.g. S3 presigned URL).
+    /// Base URL or direct download URL of the raw input media.
+    /// Interpretation depends on source_provider.
     #[prost(string, tag="2")]
     pub source_uri: ::prost::alloc::string::String,
     /// Encoding manifest as a JSON string. Parsed by the worker core; MPS
     /// passes it through without interpreting the schema.
     #[prost(string, tag="3")]
     pub manifest_json: ::prost::alloc::string::String,
+    /// Defaults to SOURCE_PROVIDER_DIRECT if unset or UNSPECIFIED.
+    #[prost(enumeration="SourceProvider", tag="4")]
+    pub source_provider: i32,
+}
+/// StorageCredentials carries S3-compatible upload credentials.
+/// Issued per-job just-in-time to limit blast radius on compromised nodes.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StorageCredentials {
+    /// Full endpoint URL, e.g. "<https://s3.amazonaws.com"> or "<http://minio:9000".>
+    #[prost(string, tag="1")]
+    pub endpoint: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub bucket: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub access_key_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub secret_access_key: ::prost::alloc::string::String,
+    #[prost(string, optional, tag="5")]
+    pub region: ::core::option::Option<::prost::alloc::string::String>,
+    /// Force path-style addressing. Required for MinIO and some S3-compatible services.
+    #[prost(bool, tag="6")]
+    pub force_path_style: bool,
 }
 /// UploadInstruction tells the worker where to upload its packaged output.
 /// Sent by MPS after acknowledging a successful JobComplete.
@@ -280,10 +304,12 @@ pub struct StartJobRequest {
 pub struct UploadInstruction {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    /// S3 URI prefix. The worker places output assets under this prefix,
-    /// preserving the relative paths from the core output layout.
+    /// The worker places output assets under this prefix, preserving the
+    /// relative paths from the core output layout.
     #[prost(string, tag="2")]
     pub target_uri_prefix: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub storage: ::core::option::Option<StorageCredentials>,
 }
 /// Discard tells the worker to abort the pipeline for a job and clear local
 /// state. Sent when the job has already reached a terminal state in Redis
@@ -293,8 +319,6 @@ pub struct UploadInstruction {
 pub struct Discard {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub reason: ::prost::alloc::string::String,
 }
 // ── GetWorkerSchema ────────────────────────────────────────────────────────
 
@@ -311,6 +335,39 @@ pub struct GetWorkerSchemaResponse {
 }
 // ── Enums ──────────────────────────────────────────────────────────────────
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SourceProvider {
+    Unspecified = 0,
+    /// plain URL, no provider-specific logic
+    Direct = 1,
+    Mux = 2,
+    Bitmovin = 3,
+}
+impl SourceProvider {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SourceProvider::Unspecified => "SOURCE_PROVIDER_UNSPECIFIED",
+            SourceProvider::Direct => "SOURCE_PROVIDER_DIRECT",
+            SourceProvider::Mux => "SOURCE_PROVIDER_MUX",
+            SourceProvider::Bitmovin => "SOURCE_PROVIDER_BITMOVIN",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SOURCE_PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
+            "SOURCE_PROVIDER_DIRECT" => Some(Self::Direct),
+            "SOURCE_PROVIDER_MUX" => Some(Self::Mux),
+            "SOURCE_PROVIDER_BITMOVIN" => Some(Self::Bitmovin),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum VideoCodec {
