@@ -1,5 +1,6 @@
 # Rust build artifacts — not generated code
 target/
+Cargo.lock
 
 # Buf local cache
 .buf/
