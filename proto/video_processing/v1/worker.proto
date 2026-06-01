@@ -12,13 +12,9 @@ service WorkerService {
   // JobStream is the persistent control channel between an infra worker and MPS.
   // The worker opens this stream on startup and keeps it alive.
   // All job assignments, progress reports, heartbeats, and lifecycle signals
-  // flow over this single stream.
+  // flow over this single stream — including an on-demand schema request
+  // (MpsMessage.RequestSchema) answered by WorkerMessage.Schema.
   rpc JobStream(stream WorkerMessage) returns (stream MpsMessage) {}
-
-  // GetWorkerSchema returns the worker's full CapabilityProfile as a JSON
-  // document, including diagnostic fields (e.g. probe failures) that are not
-  // carried in WorkerCapabilities.
-  rpc GetWorkerSchema(GetWorkerSchemaRequest) returns (GetWorkerSchemaResponse) {}
 }
 
 // ── Stream envelope messages ───────────────────────────────────────────────
@@ -31,6 +27,7 @@ message WorkerMessage {
     JobStatusUpdate    status_update = 3;
     JobComplete        job_complete  = 4;
     UploadDone         upload_done   = 5;
+    Schema             schema        = 6;
   }
 }
 
@@ -40,15 +37,16 @@ message MpsMessage {
     StartJobRequest   start_job          = 1;
     UploadInstruction upload_instruction = 2;
     Discard           discard            = 3;
+    RequestSchema     request_schema     = 4;
   }
 }
 
 // ── Worker → MPS ──────────────────────────────────────────────────────────
 
 // WorkerCapabilities mirrors the core CapabilityProfile, minus diagnostic
-// probe_failures (available via GetWorkerSchema). Sent immediately on stream
-// open and on every reconnect. On reconnect, previous_job carries the status
-// of the job that was running when the previous stream was lost.
+// probe_failures (available on demand via the Schema message). Sent immediately
+// on stream open and on every reconnect. On reconnect, previous_job carries the
+// status of the job that was running when the previous stream was lost.
 message WorkerCapabilities {
   HostInfo                  host         = 1;
   optional FfmpegCapsReport ffmpeg       = 2;
@@ -221,12 +219,17 @@ message Discard {
   string job_id = 1;
 }
 
-// ── GetWorkerSchema ────────────────────────────────────────────────────────
+// ── Schema (on-demand over JobStream) ───────────────────────────────────────
 
-message GetWorkerSchemaRequest {}
+// RequestSchema asks the worker to send its full CapabilityProfile as JSON.
+// Sent by MPS over JobStream (the worker hosts no server, so this cannot be a
+// unary RPC). Answered by WorkerMessage.Schema.
+message RequestSchema {}
 
-message GetWorkerSchemaResponse {
-  // Full CapabilityProfile serialized as JSON, including probe_failures.
+// Schema carries the worker's full CapabilityProfile serialized as JSON,
+// including diagnostic fields (e.g. probe_failures) not present in
+// WorkerCapabilities. Sent in response to RequestSchema.
+message Schema {
   string schema_json = 1;
 }
 
