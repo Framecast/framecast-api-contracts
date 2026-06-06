@@ -28,6 +28,7 @@ message WorkerMessage {
     JobComplete        job_complete  = 4;
     UploadDone         upload_done   = 5;
     Schema             schema        = 6;
+    JobOutputs         job_outputs   = 7;
   }
 }
 
@@ -174,19 +175,55 @@ message UploadDone {
   string job_id = 1;
 }
 
+// JobOutputs reports the artifacts a finished pipeline produced, one per output
+// port. It feeds the worker node's exposed ports in the MPS workflow graph so a
+// downstream node can consume a specific output (e.g. an "hls" package into AI).
+// Reported separately from JobComplete/UploadDone.
+message JobOutputs {
+  string                  job_id    = 1;
+  repeated OutputArtifact artifacts = 2;
+}
+
+// OutputArtifact is one produced asset addressed by its output port.
+message OutputArtifact {
+  // Output port name (rendition/format/…), unique within the job.
+  string port = 1;
+  // Asset type from the workflow type dictionary (e.g. "video", "s3", "image").
+  string type = 2;
+  // Final URI after upload, or the local path before upload.
+  string uri  = 3;
+  // JSON sidecar: width/height/codec/bitrate/lang/… (opaque to MPS transport).
+  bytes  meta = 4;
+}
+
 // ── MPS → Worker ──────────────────────────────────────────────────────────
 
 // StartJobRequest dispatches a job to the worker.
 message StartJobRequest {
-  string         job_id          = 1;
-  // Base URL or direct download URL of the raw input media.
-  // Interpretation depends on source_provider.
-  string         source_uri      = 2;
-  // Encoding manifest as a JSON string. Parsed by the worker core; MPS
-  // passes it through without interpreting the schema.
-  string         manifest_json   = 3;
+  string job_id = 1;
+  // Per-input acquisition locators. Each input's `label` matches an
+  // `input_label` referenced by the manifest pipeline; the worker acquires the
+  // bytes (per its own provider) into local scratch and binds them to that
+  // input. Replaces the former per-job source_uri/source_provider so different
+  // inputs of one job can come from different sources at once.
+  repeated JobInputLocator inputs = 2;
+  // Encoding manifest as a JSON string (version, asset_id, pipeline). It carries
+  // no input locators — those live in `inputs`; the worker injects local paths
+  // after acquisition. Parsed by the worker core; MPS passes it through opaquely.
+  string manifest_json = 3;
+}
+
+// JobInputLocator tells the worker how to acquire one manifest input.
+message JobInputLocator {
+  // Manifest input label this locator binds to.
+  string                  label    = 1;
+  // Provider-specific locator (a plain URL for DIRECT, a chunk-set base for
+  // Bitmovin, …).
+  string                  uri      = 2;
   // Defaults to SOURCE_PROVIDER_DIRECT if unset or UNSPECIFIED.
-  SourceProvider source_provider = 4;
+  SourceProvider          provider = 3;
+  // Optional auth headers applied when fetching `uri`.
+  map<string, string>     headers  = 4;
 }
 
 // StorageCredentials carries S3-compatible upload credentials.
@@ -221,16 +258,22 @@ message Discard {
 
 // ── Schema (on-demand over JobStream) ───────────────────────────────────────
 
-// RequestSchema asks the worker to send its full CapabilityProfile as JSON.
-// Sent by MPS over JobStream (the worker hosts no server, so this cannot be a
-// unary RPC). Answered by WorkerMessage.Schema.
-message RequestSchema {}
+// RequestSchema asks the worker to send its node descriptor as JSON. Sent by MPS
+// over JobStream (the worker hosts no server, so this cannot be a unary RPC).
+// Answered by WorkerMessage.Schema.
+// When unfiltered is true the worker returns all theoretical codec enum values
+// (not filtered to what this hardware can actually encode); useful for admin UI
+// that needs to show all possible options, not just the current machine's subset.
+message RequestSchema {
+  bool unfiltered = 1;
+}
 
-// Schema carries the worker's full CapabilityProfile serialized as JSON,
-// including diagnostic fields (e.g. probe_failures) not present in
-// WorkerCapabilities. Sent in response to RequestSchema.
+// Schema carries the worker's node descriptor serialized as JSON — the action
+// catalog, ports, and param schemas MPS aggregates into the builder schema. Sent
+// in response to RequestSchema. (Until the descriptor generator lands, the worker
+// fills this with its CapabilityProfile JSON.)
 message Schema {
-  string schema_json = 1;
+  string descriptor_json = 1;
 }
 
 // ── Enums ──────────────────────────────────────────────────────────────────
