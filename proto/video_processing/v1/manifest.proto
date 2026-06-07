@@ -7,19 +7,6 @@ option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_p
 import "google/protobuf/timestamp.proto";
 import "video_processing/v1/worker.proto";
 
-// JobIntakeMessage is published to the Kafka intake topic by upstream services
-// when a new encoding job should be started.
-message JobIntakeMessage {
-  string job_id = 1;
-  // URI of the raw input media.
-  string source_uri    = 2;
-  // Encoding manifest as a JSON string. Passed opaquely to the worker core.
-  string manifest_json = 3;
-  // Dispatch priority. Higher values are claimed first. Defaults to 0.
-  int32  priority      = 4;
-  google.protobuf.Timestamp created_at = 5;
-}
-
 // JobResultMessage is published to the Kafka result topic by MPS when a job
 // reaches a terminal state.
 message JobResultMessage {

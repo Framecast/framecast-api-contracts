@@ -29,6 +29,7 @@ message WorkerMessage {
     UploadDone         upload_done   = 5;
     Schema             schema        = 6;
     JobOutputs         job_outputs   = 7;
+    UploadFailed       upload_failed = 8;
   }
 }
 
@@ -39,6 +40,7 @@ message MpsMessage {
     UploadInstruction upload_instruction = 2;
     Discard           discard            = 3;
     RequestSchema     request_schema     = 4;
+    JobSettled        job_settled        = 5;
   }
 }
 
@@ -162,7 +164,8 @@ message JobStatusUpdate {
 }
 
 // JobComplete reports that the worker's pipeline has finished.
-// MPS responds with UploadInstruction (on success) or Discard.
+// On success it follows JobOutputs and MPS responds with UploadInstruction.
+// On failure MPS durably fails the job and responds with JobSettled.
 message JobComplete {
   string     job_id  = 1;
   JobOutcome outcome = 2;
@@ -175,6 +178,13 @@ message UploadDone {
   string job_id = 1;
 }
 
+// UploadFailed reports that the worker exhausted its bounded upload retries.
+// MPS durably fails the job and responds with JobSettled.
+message UploadFailed {
+  string job_id = 1;
+  string error  = 2;
+}
+
 // JobOutputs reports the artifacts a finished pipeline produced, one per output
 // port. It feeds the worker node's exposed ports in the MPS workflow graph so a
 // downstream node can consume a specific output (e.g. an "hls" package into AI).
@@ -184,9 +194,12 @@ message JobOutputs {
   repeated OutputArtifact artifacts = 2;
 }
 
-// OutputArtifact is one produced asset addressed by its output port.
+// One produced asset, addressed by internal (step, port). During the M6.1
+// bridge, MPS accepts only jobs whose reported ports are unique across steps.
 message OutputArtifact {
-  // Output port name (rendition/format/…), unique within the job.
+  // Producing step id within the worker manifest pipeline.
+  string step = 5;
+  // Output port name within that step (rendition/format/…).
   string port = 1;
   // Asset type from the workflow type dictionary (e.g. "video", "s3", "image").
   string type = 2;
@@ -253,6 +266,12 @@ message UploadInstruction {
 // state. Sent when the job has already reached a terminal state in Redis
 // (e.g. marked failed by the sweeper while the worker was disconnected).
 message Discard {
+  string job_id = 1;
+}
+
+// JobSettled confirms MPS durably recorded the job's terminal state. The worker
+// may now discard its reconnect state and local scratch.
+message JobSettled {
   string job_id = 1;
 }
 
