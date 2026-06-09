@@ -1,0 +1,32 @@
+name: Check
+
+on:
+  push:
+    paths:
+      - 'proto/**'
+      - 'buf.yaml'
+      - '.github/workflows/check.yml'
+  pull_request:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Lint
+        run: buf lint
+
+      # Contracts are additive-only: compare against the committed baseline
+      # branch consumers build from (see README "Compatibility rules").
+      - name: Breaking
+        run: buf breaking --against '.git#branch=m1-core-port-model'

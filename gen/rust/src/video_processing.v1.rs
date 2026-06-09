@@ -6,7 +6,7 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerMessage {
-    #[prost(oneof="worker_message::Payload", tags="1, 2, 3, 4, 5")]
+    #[prost(oneof="worker_message::Payload", tags="1, 2, 3, 4, 5, 6, 7, 8")]
     pub payload: ::core::option::Option<worker_message::Payload>,
 }
 /// Nested message and enum types in `WorkerMessage`.
@@ -24,13 +24,19 @@ pub mod worker_message {
         JobComplete(super::JobComplete),
         #[prost(message, tag="5")]
         UploadDone(super::UploadDone),
+        #[prost(message, tag="6")]
+        Schema(super::Schema),
+        #[prost(message, tag="7")]
+        JobOutputs(super::JobOutputs),
+        #[prost(message, tag="8")]
+        UploadFailed(super::UploadFailed),
     }
 }
 /// MpsMessage wraps every message MPS sends to the worker over JobStream.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MpsMessage {
-    #[prost(oneof="mps_message::Payload", tags="1, 2, 3")]
+    #[prost(oneof="mps_message::Payload", tags="1, 2, 3, 4, 5")]
     pub payload: ::core::option::Option<mps_message::Payload>,
 }
 /// Nested message and enum types in `MpsMessage`.
@@ -44,14 +50,18 @@ pub mod mps_message {
         UploadInstruction(super::UploadInstruction),
         #[prost(message, tag="3")]
         Discard(super::Discard),
+        #[prost(message, tag="4")]
+        RequestSchema(super::RequestSchema),
+        #[prost(message, tag="5")]
+        JobSettled(super::JobSettled),
     }
 }
 // ── Worker → MPS ──────────────────────────────────────────────────────────
 
 /// WorkerCapabilities mirrors the core CapabilityProfile, minus diagnostic
-/// probe_failures (available via GetWorkerSchema). Sent immediately on stream
-/// open and on every reconnect. On reconnect, previous_job carries the status
-/// of the job that was running when the previous stream was lost.
+/// probe_failures (available on demand via the Schema message). Sent immediately
+/// on stream open and on every reconnect. On reconnect, previous_job carries the
+/// status of the job that was running when the previous stream was lost.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkerCapabilities {
@@ -238,7 +248,8 @@ pub struct JobStatusUpdate {
     pub log_line: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// JobComplete reports that the worker's pipeline has finished.
-/// MPS responds with UploadInstruction (on success) or Discard.
+/// On success it follows JobOutputs and MPS responds with UploadInstruction.
+/// On failure MPS durably fails the job and responds with JobSettled.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct JobComplete {
@@ -251,11 +262,92 @@ pub struct JobComplete {
     pub error: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// UploadDone confirms that the worker has finished uploading output to S3.
+/// It is the finalization envelope: for generated-key DRM jobs it also carries
+/// the complete key bundle, delivered only after the encrypted output upload
+/// completed. MPS forwards the bundle to its key sink before durably marking
+/// the job succeeded and must not send JobSettled until both succeed. The
+/// worker retains and replays the identical envelope until JobSettled.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UploadDone {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
+    /// Generated content-encryption keys for this job. Empty for clear jobs and
+    /// for external-Widevine packaging (the external server owns those keys).
+    #[prost(message, repeated, tag="2")]
+    pub generated_keys: ::prost::alloc::vec::Vec<GeneratedKey>,
+}
+/// GeneratedKey is one content-encryption key produced by the worker's package
+/// step. Keys travel only inside UploadDone — never in JobOutputs, JobComplete,
+/// status updates, or any other message. key_hex is SECRET: receivers must not
+/// log it, persist it in ordinary job/workflow state, or echo it in errors.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeneratedKey {
+    /// Worker-core scheme vocabulary: "static_key" or "rotating_key".
+    #[prost(string, tag="1")]
+    pub scheme: ::prost::alloc::string::String,
+    /// Key id as lowercase hex (public; appears in manifests and PSSH boxes).
+    #[prost(string, tag="2")]
+    pub key_id_hex: ::prost::alloc::string::String,
+    /// Raw key material as lowercase hex. SECRET — see message comment.
+    #[prost(string, tag="3")]
+    pub key_hex: ::prost::alloc::string::String,
+    /// 0 for static keys; sequential rotation period index otherwise.
+    #[prost(uint32, tag="4")]
+    pub period_index: u32,
+    /// Start of this key's period on the asset timeline, in seconds.
+    #[prost(float, tag="5")]
+    pub period_start_sec: f32,
+    /// Duration of this key's period in seconds. 0 means "until end of asset".
+    #[prost(float, tag="6")]
+    pub period_duration_sec: f32,
+    /// Track-group label when present (e.g. SD/HD/UHD1/UHD2/AUDIO or "main").
+    #[prost(string, optional, tag="7")]
+    pub label: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// UploadFailed reports that the worker exhausted its bounded upload retries.
+/// MPS durably fails the job and responds with JobSettled.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UploadFailed {
+    #[prost(string, tag="1")]
+    pub job_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub error: ::prost::alloc::string::String,
+}
+/// JobOutputs reports the artifacts a finished pipeline produced, one per output
+/// port. It feeds the worker node's exposed ports in the MPS workflow graph so a
+/// downstream node can consume a specific output (e.g. an "hls" package into AI).
+/// Reported separately from JobComplete/UploadDone.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct JobOutputs {
+    #[prost(string, tag="1")]
+    pub job_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="2")]
+    pub artifacts: ::prost::alloc::vec::Vec<OutputArtifact>,
+}
+/// One produced asset, addressed by internal (step, port). During the M6.1
+/// bridge, MPS accepts only jobs whose reported ports are unique across steps.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OutputArtifact {
+    /// Producing step id within the worker manifest pipeline.
+    #[prost(string, tag="5")]
+    pub step: ::prost::alloc::string::String,
+    /// Output port name within that step (rendition/format/…).
+    #[prost(string, tag="1")]
+    pub port: ::prost::alloc::string::String,
+    /// Asset type from the workflow type dictionary (e.g. "video", "s3", "image").
+    #[prost(string, tag="2")]
+    pub r#type: ::prost::alloc::string::String,
+    /// Final URI after upload, or the local path before upload.
+    #[prost(string, tag="3")]
+    pub uri: ::prost::alloc::string::String,
+    /// JSON sidecar: width/height/codec/bitrate/lang/… (opaque to MPS transport).
+    #[prost(bytes="vec", tag="4")]
+    pub meta: ::prost::alloc::vec::Vec<u8>,
 }
 // ── MPS → Worker ──────────────────────────────────────────────────────────
 
@@ -265,13 +357,56 @@ pub struct UploadDone {
 pub struct StartJobRequest {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    /// URI of the raw input media (e.g. S3 presigned URL).
-    #[prost(string, tag="2")]
-    pub source_uri: ::prost::alloc::string::String,
-    /// Encoding manifest as a JSON string. Parsed by the worker core; MPS
-    /// passes it through without interpreting the schema.
+    /// Per-input acquisition locators. Each input's `label` matches an
+    /// `input_label` referenced by the manifest pipeline; the worker acquires the
+    /// bytes (per its own provider) into local scratch and binds them to that
+    /// input. Replaces the former per-job source_uri/source_provider so different
+    /// inputs of one job can come from different sources at once.
+    #[prost(message, repeated, tag="2")]
+    pub inputs: ::prost::alloc::vec::Vec<JobInputLocator>,
+    /// Encoding manifest as a JSON string (version, asset_id, pipeline). It carries
+    /// no input locators — those live in `inputs`; the worker injects local paths
+    /// after acquisition. Parsed by the worker core; MPS passes it through opaquely.
     #[prost(string, tag="3")]
     pub manifest_json: ::prost::alloc::string::String,
+}
+/// JobInputLocator tells the worker how to acquire one manifest input.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct JobInputLocator {
+    /// Manifest input label this locator binds to.
+    #[prost(string, tag="1")]
+    pub label: ::prost::alloc::string::String,
+    /// Provider-specific locator (a plain URL for DIRECT, a chunk-set base for
+    /// Bitmovin, …).
+    #[prost(string, tag="2")]
+    pub uri: ::prost::alloc::string::String,
+    /// Defaults to SOURCE_PROVIDER_DIRECT if unset or UNSPECIFIED.
+    #[prost(enumeration="SourceProvider", tag="3")]
+    pub provider: i32,
+    /// Optional auth headers applied when fetching `uri`.
+    #[prost(map="string, string", tag="4")]
+    pub headers: ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
+}
+/// StorageCredentials carries S3-compatible upload credentials.
+/// Issued per-job just-in-time to limit blast radius on compromised nodes.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StorageCredentials {
+    /// Full endpoint URL, e.g. "<https://s3.amazonaws.com"> or "<http://minio:9000".>
+    #[prost(string, tag="1")]
+    pub endpoint: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub bucket: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub access_key_id: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub secret_access_key: ::prost::alloc::string::String,
+    #[prost(string, optional, tag="5")]
+    pub region: ::core::option::Option<::prost::alloc::string::String>,
+    /// Force path-style addressing. Required for MinIO and some S3-compatible services.
+    #[prost(bool, tag="6")]
+    pub force_path_style: bool,
 }
 /// UploadInstruction tells the worker where to upload its packaged output.
 /// Sent by MPS after acknowledging a successful JobComplete.
@@ -280,10 +415,12 @@ pub struct StartJobRequest {
 pub struct UploadInstruction {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    /// S3 URI prefix. The worker places output assets under this prefix,
-    /// preserving the relative paths from the core output layout.
+    /// The worker places output assets under this prefix, preserving the
+    /// relative paths from the core output layout.
     #[prost(string, tag="2")]
     pub target_uri_prefix: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub storage: ::core::option::Option<StorageCredentials>,
 }
 /// Discard tells the worker to abort the pipeline for a job and clear local
 /// state. Sent when the job has already reached a terminal state in Redis
@@ -293,24 +430,74 @@ pub struct UploadInstruction {
 pub struct Discard {
     #[prost(string, tag="1")]
     pub job_id: ::prost::alloc::string::String,
-    #[prost(string, tag="2")]
-    pub reason: ::prost::alloc::string::String,
 }
-// ── GetWorkerSchema ────────────────────────────────────────────────────────
-
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct GetWorkerSchemaRequest {
-}
+/// JobSettled confirms MPS durably recorded the job's terminal state. The worker
+/// may now discard its reconnect state and local scratch.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetWorkerSchemaResponse {
-    /// Full CapabilityProfile serialized as JSON, including probe_failures.
+pub struct JobSettled {
     #[prost(string, tag="1")]
-    pub schema_json: ::prost::alloc::string::String,
+    pub job_id: ::prost::alloc::string::String,
+}
+// ── Schema (on-demand over JobStream) ───────────────────────────────────────
+
+/// RequestSchema asks the worker to send its node descriptor as JSON. Sent by MPS
+/// over JobStream (the worker hosts no server, so this cannot be a unary RPC).
+/// Answered by WorkerMessage.Schema.
+/// When unfiltered is true the worker returns all theoretical codec enum values
+/// (not filtered to what this hardware can actually encode); useful for admin UI
+/// that needs to show all possible options, not just the current machine's subset.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct RequestSchema {
+    #[prost(bool, tag="1")]
+    pub unfiltered: bool,
+}
+/// Schema carries the worker's node descriptor serialized as JSON — the action
+/// catalog, ports, and param schemas MPS aggregates into the builder schema. Sent
+/// in response to RequestSchema. (Until the descriptor generator lands, the worker
+/// fills this with its CapabilityProfile JSON.)
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Schema {
+    #[prost(string, tag="1")]
+    pub descriptor_json: ::prost::alloc::string::String,
 }
 // ── Enums ──────────────────────────────────────────────────────────────────
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SourceProvider {
+    Unspecified = 0,
+    /// plain URL, no provider-specific logic
+    Direct = 1,
+    Mux = 2,
+    Bitmovin = 3,
+}
+impl SourceProvider {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SourceProvider::Unspecified => "SOURCE_PROVIDER_UNSPECIFIED",
+            SourceProvider::Direct => "SOURCE_PROVIDER_DIRECT",
+            SourceProvider::Mux => "SOURCE_PROVIDER_MUX",
+            SourceProvider::Bitmovin => "SOURCE_PROVIDER_BITMOVIN",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SOURCE_PROVIDER_UNSPECIFIED" => Some(Self::Unspecified),
+            "SOURCE_PROVIDER_DIRECT" => Some(Self::Direct),
+            "SOURCE_PROVIDER_MUX" => Some(Self::Mux),
+            "SOURCE_PROVIDER_BITMOVIN" => Some(Self::Bitmovin),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum VideoCodec {
@@ -479,25 +666,6 @@ impl JobOutcome {
             _ => None,
         }
     }
-}
-/// JobIntakeMessage is published to the Kafka intake topic by upstream services
-/// when a new encoding job should be started.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct JobIntakeMessage {
-    #[prost(string, tag="1")]
-    pub job_id: ::prost::alloc::string::String,
-    /// URI of the raw input media.
-    #[prost(string, tag="2")]
-    pub source_uri: ::prost::alloc::string::String,
-    /// Encoding manifest as a JSON string. Passed opaquely to the worker core.
-    #[prost(string, tag="3")]
-    pub manifest_json: ::prost::alloc::string::String,
-    /// Dispatch priority. Higher values are claimed first. Defaults to 0.
-    #[prost(int32, tag="4")]
-    pub priority: i32,
-    #[prost(message, optional, tag="5")]
-    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// JobResultMessage is published to the Kafka result topic by MPS when a job
 /// reaches a terminal state.

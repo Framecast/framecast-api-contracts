@@ -19,8 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion8
 
 const (
-	WorkerService_JobStream_FullMethodName       = "/video_processing.v1.WorkerService/JobStream"
-	WorkerService_GetWorkerSchema_FullMethodName = "/video_processing.v1.WorkerService/GetWorkerSchema"
+	WorkerService_JobStream_FullMethodName = "/video_processing.v1.WorkerService/JobStream"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -33,12 +32,9 @@ type WorkerServiceClient interface {
 	// JobStream is the persistent control channel between an infra worker and MPS.
 	// The worker opens this stream on startup and keeps it alive.
 	// All job assignments, progress reports, heartbeats, and lifecycle signals
-	// flow over this single stream.
+	// flow over this single stream — including an on-demand schema request
+	// (MpsMessage.RequestSchema) answered by WorkerMessage.Schema.
 	JobStream(ctx context.Context, opts ...grpc.CallOption) (WorkerService_JobStreamClient, error)
-	// GetWorkerSchema returns the worker's full CapabilityProfile as a JSON
-	// document, including diagnostic fields (e.g. probe failures) that are not
-	// carried in WorkerCapabilities.
-	GetWorkerSchema(ctx context.Context, in *GetWorkerSchemaRequest, opts ...grpc.CallOption) (*GetWorkerSchemaResponse, error)
 }
 
 type workerServiceClient struct {
@@ -81,16 +77,6 @@ func (x *workerServiceJobStreamClient) Recv() (*MpsMessage, error) {
 	return m, nil
 }
 
-func (c *workerServiceClient) GetWorkerSchema(ctx context.Context, in *GetWorkerSchemaRequest, opts ...grpc.CallOption) (*GetWorkerSchemaResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetWorkerSchemaResponse)
-	err := c.cc.Invoke(ctx, WorkerService_GetWorkerSchema_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility
@@ -101,12 +87,9 @@ type WorkerServiceServer interface {
 	// JobStream is the persistent control channel between an infra worker and MPS.
 	// The worker opens this stream on startup and keeps it alive.
 	// All job assignments, progress reports, heartbeats, and lifecycle signals
-	// flow over this single stream.
+	// flow over this single stream — including an on-demand schema request
+	// (MpsMessage.RequestSchema) answered by WorkerMessage.Schema.
 	JobStream(WorkerService_JobStreamServer) error
-	// GetWorkerSchema returns the worker's full CapabilityProfile as a JSON
-	// document, including diagnostic fields (e.g. probe failures) that are not
-	// carried in WorkerCapabilities.
-	GetWorkerSchema(context.Context, *GetWorkerSchemaRequest) (*GetWorkerSchemaResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -116,9 +99,6 @@ type UnimplementedWorkerServiceServer struct {
 
 func (UnimplementedWorkerServiceServer) JobStream(WorkerService_JobStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method JobStream not implemented")
-}
-func (UnimplementedWorkerServiceServer) GetWorkerSchema(context.Context, *GetWorkerSchemaRequest) (*GetWorkerSchemaResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetWorkerSchema not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 
@@ -159,36 +139,13 @@ func (x *workerServiceJobStreamServer) Recv() (*WorkerMessage, error) {
 	return m, nil
 }
 
-func _WorkerService_GetWorkerSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetWorkerSchemaRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WorkerServiceServer).GetWorkerSchema(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WorkerService_GetWorkerSchema_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkerServiceServer).GetWorkerSchema(ctx, req.(*GetWorkerSchemaRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var WorkerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "video_processing.v1.WorkerService",
 	HandlerType: (*WorkerServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "GetWorkerSchema",
-			Handler:    _WorkerService_GetWorkerSchema_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "JobStream",

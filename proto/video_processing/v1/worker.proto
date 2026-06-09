@@ -174,8 +174,37 @@ message JobComplete {
 }
 
 // UploadDone confirms that the worker has finished uploading output to S3.
+// It is the finalization envelope: for generated-key DRM jobs it also carries
+// the complete key bundle, delivered only after the encrypted output upload
+// completed. MPS forwards the bundle to its key sink before durably marking
+// the job succeeded and must not send JobSettled until both succeed. The
+// worker retains and replays the identical envelope until JobSettled.
 message UploadDone {
   string job_id = 1;
+  // Generated content-encryption keys for this job. Empty for clear jobs and
+  // for external-Widevine packaging (the external server owns those keys).
+  repeated GeneratedKey generated_keys = 2;
+}
+
+// GeneratedKey is one content-encryption key produced by the worker's package
+// step. Keys travel only inside UploadDone — never in JobOutputs, JobComplete,
+// status updates, or any other message. key_hex is SECRET: receivers must not
+// log it, persist it in ordinary job/workflow state, or echo it in errors.
+message GeneratedKey {
+  // Worker-core scheme vocabulary: "static_key" or "rotating_key".
+  string scheme = 1;
+  // Key id as lowercase hex (public; appears in manifests and PSSH boxes).
+  string key_id_hex = 2;
+  // Raw key material as lowercase hex. SECRET — see message comment.
+  string key_hex = 3;
+  // 0 for static keys; sequential rotation period index otherwise.
+  uint32 period_index = 4;
+  // Start of this key's period on the asset timeline, in seconds.
+  float period_start_sec = 5;
+  // Duration of this key's period in seconds. 0 means "until end of asset".
+  float period_duration_sec = 6;
+  // Track-group label when present (e.g. SD/HD/UHD1/UHD2/AUDIO or "main").
+  optional string label = 7;
 }
 
 // UploadFailed reports that the worker exhausted its bounded upload retries.
