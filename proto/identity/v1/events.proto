@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/framecast/framecast-api-contracts/gen/go/identity/v1;identityv1";
+
+// AccountVerificationRequested is emitted when a user starts sign-up and must
+// confirm ownership of their email before the account is created. Consumed by
+// the notification service, which sends the verification email. Fired before
+// the user row exists — carries no user id yet.
+message AccountVerificationRequested {
+  string email = 1;
+  // Full confirmation URL the user clicks (callback + opaque token).
+  string verification_link = 2;
+}
+
+// UserRegistered is emitted after the user confirmed their email and the
+// account was persisted — the canonical "a new user exists" fact. Consumed by
+// the profile/metadata service (to create a profile row), analytics, and the
+// welcome-email flow.
+message UserRegistered {
+  string user_id = 1;
+  string email   = 2;
+}

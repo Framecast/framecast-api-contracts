@@ -1,0 +1,35 @@
+name: Buf
+
+# One canonical Buf workflow (bufbuild/buf-action maps events to steps):
+#   pull_request -> build + lint + format + breaking, with a PR summary comment
+#   push         -> push the schema to the BSR (regenerates per-language SDKs)
+#   delete       -> archive the BSR label for the deleted git ref
+on:
+  push:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  delete:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  buf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          # Required for push (to BSR) and label-archive. Breaking compares
+          # against the published module — empty on the very first push.
+          token: ${{ secrets.BUF_TOKEN }}
+          # buf-action auto-creates the repo on first push; keep it private.
+          push_create_visibility: private
