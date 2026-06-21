@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package video_processing.v1;
 
-option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_processing/v1;videoprocessingv1";
-
 import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_processing/v1;videoprocessingv1";
 
 // WorkerService is the gRPC service hosted by MPS.
 // The infra worker initiates the connection and opens a bidirectional stream.
@@ -22,25 +22,25 @@ service WorkerService {
 // WorkerMessage wraps every message the worker sends to MPS over JobStream.
 message WorkerMessage {
   oneof payload {
-    WorkerCapabilities capabilities  = 1;
-    Heartbeat          heartbeat     = 2;
-    JobStatusUpdate    status_update = 3;
-    JobComplete        job_complete  = 4;
-    UploadDone         upload_done   = 5;
-    Schema             schema        = 6;
-    JobOutputs         job_outputs   = 7;
-    UploadFailed       upload_failed = 8;
+    WorkerCapabilities capabilities = 1;
+    Heartbeat heartbeat = 2;
+    JobStatusUpdate status_update = 3;
+    JobComplete job_complete = 4;
+    UploadDone upload_done = 5;
+    Schema schema = 6;
+    JobOutputs job_outputs = 7;
+    UploadFailed upload_failed = 8;
   }
 }
 
 // MpsMessage wraps every message MPS sends to the worker over JobStream.
 message MpsMessage {
   oneof payload {
-    StartJobRequest   start_job          = 1;
+    StartJobRequest start_job = 1;
     UploadInstruction upload_instruction = 2;
-    Discard           discard            = 3;
-    RequestSchema     request_schema     = 4;
-    JobSettled        job_settled        = 5;
+    Discard discard = 3;
+    RequestSchema request_schema = 4;
+    JobSettled job_settled = 5;
   }
 }
 
@@ -51,91 +51,91 @@ message MpsMessage {
 // on stream open and on every reconnect. On reconnect, previous_job carries the
 // status of the job that was running when the previous stream was lost.
 message WorkerCapabilities {
-  HostInfo                  host         = 1;
-  optional FfmpegCapsReport ffmpeg       = 2;
-  optional ShakaCapsReport  shaka        = 3;
+  HostInfo host = 1;
+  optional FfmpegCapsReport ffmpeg = 2;
+  optional ShakaCapsReport shaka = 3;
   // Step kinds available on this worker (e.g. "video_encode", "package",
   // "storyboard"). Opaque strings — semantics defined by the worker core.
-  repeated string           step_kinds   = 4;
+  repeated string step_kinds = 4;
   // (VideoCodec, HwAccel) pairs that passed the runtime encoder probe.
-  repeated VideoCapability  video        = 5;
+  repeated VideoCapability video = 5;
   // Audio codecs that passed the runtime encoder probe.
-  repeated AudioCodec       audio        = 6;
+  repeated AudioCodec audio = 6;
   // Set only on reconnect. Absent on first connect.
-  optional JobReport        previous_job = 7;
+  optional JobReport previous_job = 7;
 }
 
 message VideoCapability {
-  VideoCodec codec    = 1;
-  HwAccel    hw_accel = 2;
+  VideoCodec codec = 1;
+  HwAccel hw_accel = 2;
 }
 
 // ── Host info ─────────────────────────────────────────────────────────────
 
 message HostInfo {
-  string             os             = 1;
-  optional string    os_long        = 2;
-  optional string    kernel_version = 3;
-  string             arch           = 4;
-  optional string    hostname       = 5;
-  CpuInfo            cpu            = 6;
-  MemoryInfo         memory         = 7;
-  repeated DiskInfo  disks          = 8;
-  repeated GpuInfo   gpus           = 9;
+  string os = 1;
+  optional string os_long = 2;
+  optional string kernel_version = 3;
+  string arch = 4;
+  optional string hostname = 5;
+  CpuInfo cpu = 6;
+  MemoryInfo memory = 7;
+  repeated DiskInfo disks = 8;
+  repeated GpuInfo gpus = 9;
 }
 
 message CpuInfo {
-  string          brand           = 1;
-  string          vendor          = 2;
-  optional uint32 physical_cores  = 3;
-  uint32          logical_cores   = 4;
-  uint64          frequency_mhz   = 5;
+  string brand = 1;
+  string vendor = 2;
+  optional uint32 physical_cores = 3;
+  uint32 logical_cores = 4;
+  uint64 frequency_mhz = 5;
 }
 
 message MemoryInfo {
-  uint64 total_bytes      = 1;
-  uint64 available_bytes  = 2;
-  uint64 used_bytes       = 3;
+  uint64 total_bytes = 1;
+  uint64 available_bytes = 2;
+  uint64 used_bytes = 3;
   uint64 swap_total_bytes = 4;
-  uint64 swap_used_bytes  = 5;
+  uint64 swap_used_bytes = 5;
 }
 
 message DiskInfo {
-  string name            = 1;
-  string mount           = 2;
-  string file_system     = 3;
-  uint64 total_bytes     = 4;
+  string name = 1;
+  string mount = 2;
+  string file_system = 3;
+  uint64 total_bytes = 4;
   uint64 available_bytes = 5;
-  string kind            = 6;
-  bool   removable       = 7;
+  string kind = 6;
+  bool removable = 7;
 }
 
 message GpuInfo {
-  string          vendor           = 1;
-  optional uint32 vendor_id        = 2;
-  string          name             = 3;
-  string          device_type      = 4;
-  uint64          vram_total_bytes = 5;
-  string          api              = 6;
-  optional string api_version      = 7;
-  optional string driver_version   = 8;
+  string vendor = 1;
+  optional uint32 vendor_id = 2;
+  string name = 3;
+  string device_type = 4;
+  uint64 vram_total_bytes = 5;
+  string api = 6;
+  optional string api_version = 7;
+  optional string driver_version = 8;
 }
 
 // ── Tool caps ─────────────────────────────────────────────────────────────
 
 message FfmpegCapsReport {
-  optional string version       = 1;
+  optional string version = 1;
   // Encoder names reported by ffmpeg -encoders (sorted).
-  repeated string encoders      = 2;
-  bool            nvenc         = 3;
-  bool            qsv           = 4;
-  bool            vaapi         = 5;
-  bool            videotoolbox  = 6;
+  repeated string encoders = 2;
+  bool nvenc = 3;
+  bool qsv = 4;
+  bool vaapi = 5;
+  bool videotoolbox = 6;
 }
 
 message ShakaCapsReport {
   optional string version = 1;
-  string          binary  = 2;
+  string binary = 2;
 }
 
 // ── Job lifecycle messages ────────────────────────────────────────────────
@@ -143,23 +143,23 @@ message ShakaCapsReport {
 // JobReport is included in WorkerCapabilities on reconnect to report the
 // status of a job that was in progress when the previous stream was lost.
 message JobReport {
-  string    job_id = 1;
+  string job_id = 1;
   JobStatus status = 2;
   // Set only when status == JOB_STATUS_COMPLETED.
   optional JobOutcome outcome = 3;
 }
 
 message Heartbeat {
-  string                    worker_id = 1;
-  google.protobuf.Timestamp sent_at   = 2;
+  string worker_id = 1;
+  google.protobuf.Timestamp sent_at = 2;
 }
 
 // JobStatusUpdate reports step-level progress for a running job.
 message JobStatusUpdate {
-  string job_id    = 1;
+  string job_id = 1;
   string step_kind = 2;
   // Progress within the current step, 0.0–1.0.
-  float  progress  = 3;
+  float progress = 3;
   optional string log_line = 4;
 }
 
@@ -167,7 +167,7 @@ message JobStatusUpdate {
 // On success it follows JobOutputs and MPS responds with UploadInstruction.
 // On failure MPS durably fails the job and responds with JobSettled.
 message JobComplete {
-  string     job_id  = 1;
+  string job_id = 1;
   JobOutcome outcome = 2;
   // Set only when outcome == JOB_OUTCOME_FAILED.
   optional string error = 3;
@@ -211,7 +211,7 @@ message GeneratedKey {
 // MPS durably fails the job and responds with JobSettled.
 message UploadFailed {
   string job_id = 1;
-  string error  = 2;
+  string error = 2;
 }
 
 // JobOutputs reports the artifacts a finished pipeline produced, one per output
@@ -219,7 +219,7 @@ message UploadFailed {
 // downstream node can consume a specific output (e.g. an "hls" package into AI).
 // Reported separately from JobComplete/UploadDone.
 message JobOutputs {
-  string                  job_id    = 1;
+  string job_id = 1;
   repeated OutputArtifact artifacts = 2;
 }
 
@@ -233,9 +233,9 @@ message OutputArtifact {
   // Asset type from the workflow type dictionary (e.g. "video", "s3", "image").
   string type = 2;
   // Final URI after upload, or the local path before upload.
-  string uri  = 3;
+  string uri = 3;
   // JSON sidecar: width/height/codec/bitrate/lang/… (opaque to MPS transport).
-  bytes  meta = 4;
+  bytes meta = 4;
 }
 
 // ── MPS → Worker ──────────────────────────────────────────────────────────
@@ -258,37 +258,37 @@ message StartJobRequest {
 // JobInputLocator tells the worker how to acquire one manifest input.
 message JobInputLocator {
   // Manifest input label this locator binds to.
-  string                  label    = 1;
+  string label = 1;
   // Provider-specific locator (a plain URL for DIRECT, a chunk-set base for
   // Bitmovin, …).
-  string                  uri      = 2;
+  string uri = 2;
   // Defaults to SOURCE_PROVIDER_DIRECT if unset or UNSPECIFIED.
-  SourceProvider          provider = 3;
+  SourceProvider provider = 3;
   // Optional auth headers applied when fetching `uri`.
-  map<string, string>     headers  = 4;
+  map<string, string> headers = 4;
 }
 
 // StorageCredentials carries S3-compatible upload credentials.
 // Issued per-job just-in-time to limit blast radius on compromised nodes.
 message StorageCredentials {
   // Full endpoint URL, e.g. "https://s3.amazonaws.com" or "http://minio:9000".
-  string          endpoint          = 1;
-  string          bucket            = 2;
-  string          access_key_id     = 3;
-  string          secret_access_key = 4;
-  optional string region            = 5;
+  string endpoint = 1;
+  string bucket = 2;
+  string access_key_id = 3;
+  string secret_access_key = 4;
+  optional string region = 5;
   // Force path-style addressing. Required for MinIO and some S3-compatible services.
-  bool            force_path_style  = 6;
+  bool force_path_style = 6;
 }
 
 // UploadInstruction tells the worker where to upload its packaged output.
 // Sent by MPS after acknowledging a successful JobComplete.
 message UploadInstruction {
-  string             job_id            = 1;
+  string job_id = 1;
   // The worker places output assets under this prefix, preserving the
   // relative paths from the core output layout.
-  string             target_uri_prefix = 2;
-  StorageCredentials storage           = 3;
+  string target_uri_prefix = 2;
+  StorageCredentials storage = 3;
 }
 
 // Discard tells the worker to abort the pipeline for a job and clear local
@@ -328,45 +328,45 @@ message Schema {
 
 enum SourceProvider {
   SOURCE_PROVIDER_UNSPECIFIED = 0;
-  SOURCE_PROVIDER_DIRECT      = 1;  // plain URL, no provider-specific logic
-  SOURCE_PROVIDER_MUX         = 2;
-  SOURCE_PROVIDER_BITMOVIN    = 3;
+  SOURCE_PROVIDER_DIRECT = 1; // plain URL, no provider-specific logic
+  SOURCE_PROVIDER_MUX = 2;
+  SOURCE_PROVIDER_BITMOVIN = 3;
 }
 
 enum VideoCodec {
   VIDEO_CODEC_UNSPECIFIED = 0;
-  VIDEO_CODEC_H264        = 1;
-  VIDEO_CODEC_H265        = 2;
-  VIDEO_CODEC_AV1         = 3;
-  VIDEO_CODEC_VP9         = 4;
+  VIDEO_CODEC_H264 = 1;
+  VIDEO_CODEC_H265 = 2;
+  VIDEO_CODEC_AV1 = 3;
+  VIDEO_CODEC_VP9 = 4;
 }
 
 enum HwAccel {
-  HW_ACCEL_UNSPECIFIED   = 0;
-  HW_ACCEL_NONE          = 1;
-  HW_ACCEL_NVENC         = 2;
-  HW_ACCEL_QSV           = 3;
-  HW_ACCEL_VAAPI         = 4;
+  HW_ACCEL_UNSPECIFIED = 0;
+  HW_ACCEL_NONE = 1;
+  HW_ACCEL_NVENC = 2;
+  HW_ACCEL_QSV = 3;
+  HW_ACCEL_VAAPI = 4;
   HW_ACCEL_VIDEO_TOOLBOX = 5;
-  HW_ACCEL_AMF           = 6;
+  HW_ACCEL_AMF = 6;
 }
 
 enum AudioCodec {
   AUDIO_CODEC_UNSPECIFIED = 0;
-  AUDIO_CODEC_AAC         = 1;
-  AUDIO_CODEC_OPUS        = 2;
-  AUDIO_CODEC_AC3         = 3;
-  AUDIO_CODEC_EAC3        = 4;
+  AUDIO_CODEC_AAC = 1;
+  AUDIO_CODEC_OPUS = 2;
+  AUDIO_CODEC_AC3 = 3;
+  AUDIO_CODEC_EAC3 = 4;
 }
 
 enum JobStatus {
   JOB_STATUS_UNSPECIFIED = 0;
-  JOB_STATUS_RUNNING     = 1;
-  JOB_STATUS_COMPLETED   = 2;
+  JOB_STATUS_RUNNING = 1;
+  JOB_STATUS_COMPLETED = 2;
 }
 
 enum JobOutcome {
   JOB_OUTCOME_UNSPECIFIED = 0;
-  JOB_OUTCOME_SUCCEEDED   = 1;
-  JOB_OUTCOME_FAILED      = 2;
+  JOB_OUTCOME_SUCCEEDED = 1;
+  JOB_OUTCOME_FAILED = 2;
 }

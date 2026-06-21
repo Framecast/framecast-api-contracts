@@ -2,19 +2,19 @@ syntax = "proto3";
 
 package video_processing.v1;
 
-option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_processing/v1;videoprocessingv1";
-
 import "google/protobuf/timestamp.proto";
 import "video_processing/v1/worker.proto";
+
+option go_package = "github.com/framecast/framecast-api-contracts/gen/go/video_processing/v1;videoprocessingv1";
 
 // JobResultMessage is published to the Kafka result topic by MPS when a job
 // reaches a terminal state.
 message JobResultMessage {
-  string     job_id     = 1;
-  JobOutcome outcome    = 2;
+  string job_id = 1;
+  JobOutcome outcome = 2;
   // S3 URI prefix of the output assets. Present only on JOB_OUTCOME_SUCCEEDED.
-  optional string asset_uri    = 3;
+  optional string asset_uri = 3;
   // Human-readable error description. Present only on JOB_OUTCOME_FAILED.
-  optional string error        = 4;
+  optional string error = 4;
   google.protobuf.Timestamp completed_at = 5;
 }

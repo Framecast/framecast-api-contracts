@@ -20,5 +20,22 @@ message AccountVerificationRequested {
 // welcome-email flow.
 message UserRegistered {
   string user_id = 1;
-  string email   = 2;
+  string email = 2;
+}
+
+// PasswordResetRequested is emitted when a user asks to reset a forgotten
+// password. Consumed by the notification service, which sends the reset email.
+message PasswordResetRequested {
+  string email = 1;
+  // Full reset URL the user clicks (callback + opaque single-use token).
+  string reset_link = 2;
+}
+
+// LoginLinkRequested is emitted when a user asks for a passwordless login link
+// (also rendered as a QR code by the client — same one-time token). Consumed by
+// the notification service, which sends the login email.
+message LoginLinkRequested {
+  string email = 1;
+  // Full login URL the user clicks/scans (callback + opaque single-use token).
+  string login_link = 2;
 }

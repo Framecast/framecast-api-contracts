@@ -11,7 +11,8 @@ truth kept here; per-language bindings are generated and hosted by the
 - `proto/video_processing/v1/` — the worker↔MPS protocol (`JobStream`,
   `WorkerMessage`/`MpsMessage` envelopes, job lifecycle, upload finalization).
 - `proto/identity/v1/` — identity service events published to Kafka
-  (`AccountVerificationRequested`, `UserRegistered`).
+  (`AccountVerificationRequested`, `UserRegistered`, `PasswordResetRequested`,
+  `LoginLinkRequested`).
 
 ## Consuming
 
