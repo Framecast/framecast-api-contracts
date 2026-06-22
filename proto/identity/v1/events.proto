@@ -39,3 +39,23 @@ message LoginLinkRequested {
   // Full login URL the user clicks/scans (callback + opaque single-use token).
   string login_link = 2;
 }
+
+// ExternalIdentityLinked is emitted when an external (SSO/OIDC) identity is
+// attached to a user — both when the SSO sign-in created the account and when
+// it linked to an existing one (matched by a provider-verified email). Fired
+// once per (provider, subject); a repeat SSO login of an already-linked
+// identity does not re-emit it. Consumed by the profile/metadata service (the
+// only place a provider display name surfaces, since the identity service
+// stores no profile data) and analytics.
+message ExternalIdentityLinked {
+  string user_id = 1;
+  // OIDC provider key, e.g. "google".
+  string provider = 2;
+  // Provider-verified email captured at link time.
+  string email = 3;
+  // Provider profile name; may be empty if the provider supplied none.
+  string display_name = 4;
+  // True when this link also created the account; false when it attached to an
+  // existing user. Lets a consumer create-vs-update without correlating events.
+  bool new_user = 5;
+}

@@ -12,7 +12,7 @@ truth kept here; per-language bindings are generated and hosted by the
   `WorkerMessage`/`MpsMessage` envelopes, job lifecycle, upload finalization).
 - `proto/identity/v1/` — identity service events published to Kafka
   (`AccountVerificationRequested`, `UserRegistered`, `PasswordResetRequested`,
-  `LoginLinkRequested`).
+  `LoginLinkRequested`, `ExternalIdentityLinked`).
 
 ## Consuming
 
