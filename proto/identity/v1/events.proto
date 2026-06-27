@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package identity.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/framecast/framecast-api-contracts/gen/go/identity/v1;identityv1";
 
 // AccountVerificationRequested is emitted when a user starts sign-up and must
@@ -58,4 +60,43 @@ message ExternalIdentityLinked {
   // True when this link also created the account; false when it attached to an
   // existing user. Lets a consumer create-vs-update without correlating events.
   bool new_user = 5;
+}
+
+// AdminAction enumerates the state-changing operations an administrator can
+// perform on a user account, carried by AdminActionPerformed. Additive: new
+// variants may be appended; consumers must treat unknown variants as opaque.
+enum AdminAction {
+  ADMIN_ACTION_UNSPECIFIED = 0;
+  ADMIN_ACTION_USER_CREATED = 1;
+  ADMIN_ACTION_USER_UPDATED = 2;
+  ADMIN_ACTION_USER_BLOCKED = 3;
+  ADMIN_ACTION_USER_UNBLOCKED = 4;
+  ADMIN_ACTION_PASSWORD_RESET = 5;
+  ADMIN_ACTION_ROLE_GRANTED = 6;
+  ADMIN_ACTION_ROLE_REVOKED = 7;
+  ADMIN_ACTION_SESSION_REVOKED = 8;
+  ADMIN_ACTION_ALL_SESSIONS_REVOKED = 9;
+  ADMIN_ACTION_TOTP_CLEARED = 10;
+  ADMIN_ACTION_PASSKEY_REMOVED = 11;
+  ADMIN_ACTION_RECOVERY_CODES_CLEARED = 12;
+  ADMIN_ACTION_IDENTITY_UNLINKED = 13;
+}
+
+// AdminActionPerformed is emitted whenever an administrator performs a
+// state-changing operation on a user account (block, role change, credential
+// reset, session revocation, ...). It is the canonical admin audit fact,
+// consumed by analytics and the audit-log service. Read-only admin queries do
+// not emit it.
+message AdminActionPerformed {
+  // The administrator who performed the action.
+  string actor_user_id = 1;
+  // The user the action targeted.
+  string target_user_id = 2;
+  // What was done.
+  AdminAction action = 3;
+  // Server time the action committed.
+  google.protobuf.Timestamp performed_at = 4;
+  // Optional action-specific detail, e.g. {"role": "admin"} for a role grant or
+  // {"session_id": "..."} for a single-session revocation. Never secret-bearing.
+  map<string, string> metadata = 5;
 }
